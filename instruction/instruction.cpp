@@ -6,19 +6,19 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "instruction.h"
+#include "Instruction.h"
 #include "../MemHelper.h"
 #include <unistd.h>
 
 bool FAHook::Instruction::enableJumpStub(FAHook::HookInfo *info) {
-    auto origAddr = info->getOriginalAddr();
+    auto origAddr = getOriginalAddr(info);
     auto len = info->getJumpStubLen();
     auto stubAddr = info->getJumpStubBack();
     return patchMemory(origAddr, stubAddr, len);
 }
 
 bool FAHook::Instruction::disableJumpStub(FAHook::HookInfo *info) {
-    auto origAddr = info->getOriginalAddr();
+    auto origAddr = getOriginalAddr(info);
     auto len = info->getBackLen();
     auto stubAddr = info->getOriginalStubBack();
     return patchMemory(origAddr, stubAddr, len);
@@ -35,7 +35,9 @@ bool FAHook::Instruction::patchMemory(void *dest, void *src, uint32_t len) {
     memcpy(dest, src, len);
     MemHelper::protectMemory(dest, len);
     // TODO flush cache(platform???)
-//    cacheflush(dest, (Elf_Addr)dest + len, 0);
+//#ifdef S32
+    cacheflush((Elf_Addr)dest, (Elf_Addr)dest + len, 0);
+//#endif
     return true;
 }
 
@@ -47,6 +49,14 @@ bool FAHook::Instruction::createBackStub(FAHook::HookInfo *info) {
     auto stub = new uint8_t[len];
     info->setOriginalStubBack(stub);
     info->setBackLen(len);
-    memcpy(stub, info->getOriginalAddr(), len);
+    memcpy(stub, getOriginalAddr(info), len);
     return true;
+}
+
+void *FAHook::Instruction::getOriginalAddr(FAHook::HookInfo *info) {
+    auto addr = info->getOriginalAddr();
+    if(info->getOriginalFunctionType() == FAHook::THUMB) {
+        addr =  (void *) ((Elf_Addr)addr & (~0x1L));
+    }
+    return addr;
 }

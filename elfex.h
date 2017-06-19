@@ -20,7 +20,7 @@
 #define S32
 #elif defined(__x86_64__)
 #define S64
-#elif defined(__mips64)  /* mips64el-* toolchain defines __mips__ too */
+#elif defined(__mips64__)  /* mips64el-* toolchain defines __mips__ too */
 #define S64
 #elif defined(__mips__)
 #define S32

@@ -29,8 +29,9 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 #include <stdio.h>
 #include "FAInHook.h"
 
-void myFopen(const char * __restrict r1, const char * __restrict r2) {
+int myFopen(const char * __restrict r1, const char * __restrict r2) {
     FLOGD(My Fopen has been invoked %s %s, r1, r2);
+    return -1;
 }
 
 void test() {
@@ -42,7 +43,7 @@ void test() {
     hook->hookAll();
 
     fopen("/data/data/f8left.fagothook/cachefile", "r");
-
+    hook->unhookAll();
 }
 
 

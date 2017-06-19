@@ -3,7 +3,7 @@
 //                     Created by F8LEFT on 2017/6/19.
 //                   Copyright (c) 2017. All rights reserved.
 //===----------------------------------------------------------------------===//
-//
+// Instruction base.
 //===----------------------------------------------------------------------===//
 
 
@@ -20,6 +20,8 @@ namespace FAHook {
     class Instruction {
     public:
         virtual ~Instruction(){}
+
+        static void* getOriginalAddr(HookInfo* info);
 
         /*create jump stub to jump to new func*/
         virtual bool createStub(HookInfo* info) = 0;
@@ -49,10 +51,10 @@ namespace FAHook {
             return X86;
 #elif defined(__x86_64__)
             return X64;
-#elif defined(__mips64)  /* mips64el-* toolchain defines __mips__ too */
-            return MIPS;
-#elif defined(__mips__)
+#elif defined(__mips64__)  /* mips64el-* toolchain defines __mips__ too */
             return MIPS64;
+#elif defined(__mips__)
+            return MIPS;
 #endif
         }
 

@@ -10,7 +10,23 @@
 #include "FAInHook.h"
 #include "MemHelper.h"
 #include "HookInfo.h"
-#include "instruction/instruction.h"
+#include "instruction/Instruction.h"
+
+#if defined(__arm__)
+#include "instruction/ArmInstruction.h"
+#include "instruction/ThumbInstruction.h"
+#elif defined(__aarch64__)
+#include "instruction/Arm64Instruction.h"
+#elif defined(__i386__)
+#include "instruction/X86Instruction.h"
+#elif defined(__x86_64__)
+#include "instruction/X64Instruction.h"
+#elif defined(__mips64__)  /* mips64el-* toolchain defines __mips__ too */
+#include "instruction/Mips64Instruction.h"
+#elif defined(__mips__)
+#include "instruction/MipsInstruction.h"
+#endif
+
 
 FAInHook *FAInHook::instance() {
     static FAInHook* mIns = nullptr;
@@ -34,7 +50,7 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
         Elf_Addr orginalFunAddr, Elf_Addr newFunAddr, Elf_Addr *callOrigin) {
     // register hook information, calc hook stub at the same time.
     if(!FAHook::MemHelper::isFunctionAddr((void *) orginalFunAddr)
-       || FAHook::MemHelper::isFunctionAddr((void *) newFunAddr)) {
+       || !FAHook::MemHelper::isFunctionAddr((void *) newFunAddr)) {
         return FERROR_NOT_EXECUTABLE;
     }
 
@@ -58,15 +74,35 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
     info->setOriginalFunctionType(type);
 
     FAHook::Instruction* instruction = nullptr;
-    // TODO support all platform
     switch(type) {
+#if defined(__arm__)
         case FAHook::ARM:
+            instruction = new FAHook::ArmInstruction();
+            break;
         case FAHook::THUMB:
+            instruction = new FAHook::ThumbInstruction();
+            break;
+#elif defined(__aarch64__)
         case FAHook::ARM64:
+            instruction = new FAHook::Arm64Instruction();
+            break;
+#elif defined(__i386__)
         case FAHook::X86:
+            instruction = new FAHook::X86Instruction();
+            break;
+#elif defined(__x86_64__)
         case FAHook::X64:
+            instruction = new FAHook::X64Instruction();
+            break;
+#elif defined(__mips64__)
+            case FAHook::MIPS64:
+            instruction = new FAHook::Mips64Instruction();
+            break;
+#elif defined(__mips__)
         case FAHook::MIPS:
-        case FAHook::MIPS64:
+            instruction = new FAHook::MipsInstruction();
+            break;
+#endif
         default:
             assert(false && "not support abi");
             break;
@@ -84,7 +120,7 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
     info->setHookStatus(FAHook::REGISTERED);
 
     if(callOrigin != nullptr) {
-        *callOrigin = (Elf_Addr) info->getCallOriginalAddr();
+        *callOrigin = (Elf_Addr) info->getCallOriginalIns();
     }
 
     delete instruction;
@@ -147,7 +183,7 @@ Elf_Addr FAInHook::getCallOriginFuncAddr(Elf_Addr originalFunAddr) {
     if(info == nullptr) {
         return 0;
     }
-    return (Elf_Addr) info->getCallOriginalAddr();
+    return (Elf_Addr) info->getCallOriginalIns();
 }
 
 Elf_Addr FAInHook::getNewFunAddr(Elf_Addr originalFunAddr) {

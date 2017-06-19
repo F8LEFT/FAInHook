@@ -48,7 +48,6 @@ namespace FAHook {
     private:
         void* original_addr_;
         void* hook_addr_;
-        void* call_original_addr;
 
         // used for hook, to store jump stub
         uint8_t * jump_stub_back_ = nullptr;         // record jump opcode
@@ -66,9 +65,6 @@ namespace FAHook {
     public:
         void* getOriginalAddr() { return original_addr_; }
         void* getHookAddr() { return hook_addr_; }
-
-        void setCallOriginalAddr(void* addr) { call_original_addr = addr; }
-        void* getCallOriginalAddr() { return  call_original_addr; }
 
         void setJumpStubBack(uint8_t* addr) { jump_stub_back_ = addr; }
         uint8_t *getJumpStubBack() { return jump_stub_back_; }
