@@ -34,10 +34,9 @@ bool FAHook::Instruction::patchMemory(void *dest, void *src, uint32_t len) {
 
     memcpy(dest, src, len);
     MemHelper::protectMemory(dest, len);
-    // TODO flush cache(platform???)
-//#ifdef S32
+#ifdef __arm__
     cacheflush((Elf_Addr)dest, (Elf_Addr)dest + len, 0);
-//#endif
+#endif
     return true;
 }
 
