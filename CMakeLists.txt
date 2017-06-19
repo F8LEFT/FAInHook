@@ -1,6 +1,8 @@
 set(ProjectName FAInHook)
 
-set(SOURCE FAInHook.cpp)
+aux_source_directory(instruction INSTRUCTION)
+
+set(SOURCE FAInHook.cpp MemHelper.cpp ${INSTRUCTION})
 
 if(CMAKE_BUILD_TYPE MATCHES "Debug")
     set(FA_EXTLIB log)

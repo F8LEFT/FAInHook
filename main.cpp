@@ -27,7 +27,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 
 #include <dlfcn.h>
 #include <stdio.h>
-#include "FAGotHook.h"
+#include "FAInHook.h"
 
 void myFopen(const char * __restrict r1, const char * __restrict r2) {
     FLOGD(My Fopen has been invoked %s %s, r1, r2);
@@ -37,17 +37,9 @@ void test() {
     auto libc = dlopen("libc.so", RTLD_NOW);
     auto pfopen = dlsym(libc, "fopen");
 
-    FAGotHook::Config cfg;
-    cfg.check_ehdr = false;
-    cfg.unprotect_got_memory = true;
-    cfg.with_local_func = true;
-
-    // so name from /proc/self/maps
-    // FAGotHook will try to parse so data from memoy.
-    FAGotHook faGotHook("libFAGotHook.so", &cfg);
-    if(faGotHook.is_valid()) {
-        faGotHook.rebindFunc((Elf_Addr) pfopen, (Elf_Addr) myFopen);
-    }
+    auto hook = FAInHook::instance();
+    hook->registerHook((Elf_Addr) pfopen, (Elf_Addr) myFopen, nullptr);
+    hook->hookAll();
 
     fopen("/data/data/f8left.fagothook/cachefile", "r");
 
