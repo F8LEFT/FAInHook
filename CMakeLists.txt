@@ -4,19 +4,19 @@ if(ANDROID_ABI MATCHES "armeabi(-v7a)?")
     set(INSTRUCTION instruction/Instruction.cpp
                     instruction/ThumbInstruction.cpp
                     instruction/ArmInstruction.cpp)
-elseif(ANDROID_ABI MATCHES "arm64-v8a")
+elseif(ANDROID_ABI STREQUAL "arm64-v8a")
     set(INSTRUCTION instruction/Instruction.cpp
                     instruction/Arm64Instruction.cpp)
-elseif(ANDROID_ABI MATCHES "x86")
+elseif(ANDROID_ABI STREQUAL "x86")
     set(INSTRUCTION instruction/Instruction.cpp
                     instruction/X86Instruction.cpp)
-elseif(ANDROID_ABI MATCHES "x86_64")
+elseif(ANDROID_ABI STREQUAL "x86_64")
     set(INSTRUCTION instruction/Instruction.cpp
                     instruction/X64Instruction.cpp)
-elseif(ANDROID_ABI MATCHES "mips")
+elseif(ANDROID_ABI STREQUAL "mips")
     set(INSTRUCTION instruction/Instruction.cpp
                         instruction/MipsInstruction.cpp)
-elseif(ANDROID_ABI MATCHES "mips64")
+elseif(ANDROID_ABI STREQUAL "mips64")
     set(INSTRUCTION instruction/Instruction.cpp
                             instruction/Mips64Instruction.cpp)
 endif()
