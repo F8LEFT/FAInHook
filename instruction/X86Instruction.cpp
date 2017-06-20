@@ -20,8 +20,3 @@ bool FAHook::X86Instruction::createStub(FAHook::HookInfo *info) {
     info->setJumpStubBack(stub);
     return true;
 }
-
-bool FAHook::X86Instruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    info->setCallOriginalIns(nullptr);
-    return true;
-}

@@ -9,6 +9,7 @@
 
 #include "ArmInstruction.h"
 
+
 bool FAHook::ArmInstruction::createStub(FAHook::HookInfo *info) {
     auto stubsize = 8;
     uint8_t* stub = new uint8_t[8];
@@ -20,7 +21,3 @@ bool FAHook::ArmInstruction::createStub(FAHook::HookInfo *info) {
     return true;
 }
 
-bool FAHook::ArmInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    info->setCallOriginalIns(nullptr);
-    return true;
-}

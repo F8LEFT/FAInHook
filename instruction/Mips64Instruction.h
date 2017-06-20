@@ -17,7 +17,6 @@ namespace FAHook {
     public:
         ~Mips64Instruction() {}
         bool createStub(HookInfo* info);
-        bool createCallOriginalStub(HookInfo* info);
     };
 
 }

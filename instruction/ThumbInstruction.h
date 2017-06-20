@@ -17,7 +17,6 @@ namespace FAHook {
     public:
         ~ThumbInstruction() {}
         bool createStub(HookInfo* info);
-        bool createCallOriginalStub(HookInfo* info);
     };
 
 }

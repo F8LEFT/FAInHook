@@ -26,7 +26,11 @@ namespace FAHook {
         /*create jump stub to jump to new func*/
         virtual bool createStub(HookInfo* info) = 0;
         /*create original jump stub to jump to old func*/
-        virtual bool createCallOriginalStub(HookInfo* info) {assert(false && "not support yet");};
+        virtual bool createCallOriginalStub(HookInfo* info) {
+            info->setCallOriginalIns(nullptr);
+            assert(false && "not support yet");
+            return false;
+        };
         /*create back stub*/
         bool createBackStub(HookInfo* info);
 

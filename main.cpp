@@ -29,21 +29,24 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 #include <stdio.h>
 #include "FAInHook.h"
 
-int myFopen(const char * __restrict r1, const char * __restrict r2) {
-    FLOGD(My Fopen has been invoked %s %s, r1, r2);
+int b1(const char * r1, const char * r2) {
+    FLOGD(b1 has been invoked %s %s, r1, r2);
+    return 0;
+}
+
+int b2(const char* r1, const char * r2) {
+    FLOGE(b2 has been invoked %s %s, r1, r2);
     return -1;
 }
 
 void test() {
-    auto libc = dlopen("libc.so", RTLD_NOW);
-    auto pfopen = dlsym(libc, "fopen");
-
     auto hook = FAInHook::instance();
-    hook->registerHook((Elf_Addr) pfopen, (Elf_Addr) myFopen, nullptr);
+    hook->registerHook((Elf_Addr) b2, (Elf_Addr) b1, nullptr);
     hook->hookAll();
 
-    fopen("/data/data/f8left.fagothook/cachefile", "r");
+    b2("This should be in b1", "is it true??");
     hook->unhookAll();
+    b2("This should be in b2", "is it true??");
 }
 
 

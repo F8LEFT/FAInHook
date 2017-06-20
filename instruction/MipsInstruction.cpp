@@ -13,6 +13,3 @@ bool FAHook::MipsInstruction::createStub(FAHook::HookInfo *info) {
     return false;
 }
 
-bool FAHook::MipsInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    return Instruction::createCallOriginalStub(info);
-}

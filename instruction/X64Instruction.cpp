@@ -35,7 +35,3 @@ bool FAHook::X64Instruction::createStub(FAHook::HookInfo *info) {
     return true;
 }
 
-bool FAHook::X64Instruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    info->setCallOriginalIns(nullptr);
-    return true;
-}

@@ -17,7 +17,6 @@ namespace FAHook {
     public:
         ~ArmInstruction() {}
         bool createStub(HookInfo* info);
-        bool createCallOriginalStub(HookInfo* info);
     };
 
 }

@@ -31,8 +31,3 @@ bool FAHook::ThumbInstruction::createStub(FAHook::HookInfo *info) {
     info->setJumpStubBack(stub);
     return true;
 }
-
-bool FAHook::ThumbInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    info->setCallOriginalIns(nullptr);
-    return true;
-}

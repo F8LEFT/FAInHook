@@ -17,7 +17,6 @@ namespace FAHook {
     public:
         ~X86Instruction() {}
         bool createStub(HookInfo* info);
-        bool createCallOriginalStub(HookInfo* info);
     };
 
 }
