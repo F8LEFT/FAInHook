@@ -9,13 +9,14 @@
 
 #include "Arm64Instruction.h"
 
-/*
-.plt:00000000000101E0 F0 01 00 B0                       ADRP            X16, #strlen_ptr@PAGE
-.plt:00000000000101E4 11 06 46 F9                       LDR             X17, [X16,#strlen_ptr@PAGEOFF]
-.plt:00000000000101E8 10 22 30 91                       ADD             X16, X16, #strlen_ptr@PAGEOFF
-.plt:00000000000101EC 20 02 1F D6                       BR              X17 ; strlen
-*/
-
 bool FAHook::Arm64Instruction::createStub(FAHook::HookInfo *info) {
-    return false;
+    auto stubsize = 16;
+    uint8_t* stub = new uint8_t[16];
+    *(uint32_t *)&stub[0] = 0x58000051; // ldr x17, =stub[8]
+    *(uint32_t *)&stub[4] = 0xd61f0220; // BR X17
+    *(uint64_t *)&stub[8] = (uint64_t) info->getHookAddr();
+
+    info->setJumpStubLen(stubsize);
+    info->setJumpStubBack(stub);
+    return true;
 }
