@@ -109,9 +109,10 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
     }
 
     if(!instruction->createStub(info)
+       || !instruction->createBackStub(info)
        || (callOrigin != nullptr) ?
             !instruction->createCallOriginalStub(info) : false  // want a callback
-       || !instruction->createBackStub(info)) {
+       ) {
         delete instruction;
         delete info;
         return FERROR_MEMORY;

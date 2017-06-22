@@ -29,8 +29,11 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 #include <stdio.h>
 #include "FAInHook.h"
 
+int (*gB2)(const char* r1, const char* r2);
+
 int b1(const char * r1, const char * r2) {
     FLOGD(b1 has been invoked %s %s, r1, r2);
+    gB2("This is invoke from r1", "is it in b1??");
     return 0;
 }
 
@@ -41,7 +44,7 @@ int b2(const char* r1, const char * r2) {
 
 void test() {
     auto hook = FAInHook::instance();
-    hook->registerHook((Elf_Addr) b2, (Elf_Addr) b1, nullptr);
+    hook->registerHook((Elf_Addr) b2, (Elf_Addr) b1, (Elf_Addr*)&gB2);
     hook->hookAll();
 
     b2("This should be in b1", "is it true??");
