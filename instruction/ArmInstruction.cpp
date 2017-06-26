@@ -158,7 +158,7 @@ bool FAHook::ArmInstruction::repairCallOriginIns(FAHook::HookInfo *info,
                 repair[pos++] = ins[i];
             }
         }
-        originalPc +=sizeof(size_t);
+        originalPc +=sizeof(uint32_t);
         //ins++;
     }
     repair[pos++] = 0xe51ff004;	// LDR PC, [PC, #-4]

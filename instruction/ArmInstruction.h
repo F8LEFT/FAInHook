@@ -3,7 +3,7 @@
 //                     Created by F8LEFT on 2017/6/19.
 //                   Copyright (c) 2017. All rights reserved.
 //===----------------------------------------------------------------------===//
-// Instruction helper for arm
+// Instruction helper for arm. Base on GodInHook
 //===----------------------------------------------------------------------===//
 
 

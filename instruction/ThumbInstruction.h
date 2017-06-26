@@ -3,7 +3,7 @@
 //                     Created by F8LEFT on 2017/6/19.
 //                   Copyright (c) 2017. All rights reserved.
 //===----------------------------------------------------------------------===//
-// instruction helper for thumb
+// instruction helper for thumb. Base on GodInHook
 //===----------------------------------------------------------------------===//
 
 

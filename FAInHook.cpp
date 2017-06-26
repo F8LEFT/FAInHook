@@ -17,10 +17,8 @@
 #include "instruction/ThumbInstruction.h"
 #elif defined(__aarch64__)
 #include "instruction/Arm64Instruction.h"
-#elif defined(__i386__)
-#include "instruction/X86Instruction.h"
-#elif defined(__x86_64__)
-#include "instruction/X64Instruction.h"
+#elif defined(__i386__) || defined(__x86_64__)
+#include "instruction/IntelInstruction.h"
 #elif defined(__mips64__)  /* mips64el-* toolchain defines __mips__ too */
 #include "instruction/Mips64Instruction.h"
 #elif defined(__mips__)
@@ -86,13 +84,10 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
         case FAHook::ARM64:
             instruction = new FAHook::Arm64Instruction();
             break;
-#elif defined(__i386__)
+#elif defined(__i386__) || defined(__x86_64__)
         case FAHook::X86:
-            instruction = new FAHook::X86Instruction();
-            break;
-#elif defined(__x86_64__)
         case FAHook::X64:
-            instruction = new FAHook::X64Instruction();
+            instruction = new FAHook::IntelInstruction();
             break;
 #elif defined(__mips64__)
             case FAHook::MIPS64:
@@ -105,6 +100,7 @@ FAInHook::HOOK_STATUS FAInHook::registerHook(
 #endif
         default:
             assert(false && "not support abi");
+            return FERROR_UNKNOWN;
             break;
     }
 

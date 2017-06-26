@@ -19,7 +19,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
     }
 
 
-    FLOGD(FAGotHook.so load success);
+    FLOGD(FAInHook.so load success);
     FLOGD(current JNI Version %d, JNI_VERSION_1_6);
     test();
     return JNI_VERSION_1_6;
@@ -28,12 +28,18 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved)
 #include <dlfcn.h>
 #include <stdio.h>
 #include "FAInHook.h"
+#define TESTCB
 
+#ifdef TESTCB
 int (*gB2)(const char* r1, const char* r2);
+#endif
 
 int b1(const char * r1, const char * r2) {
     FLOGE(b1 has been invoked %s %s, r1, r2);
-//    gB2("This is invoke from r1", "is it in b1??");
+#ifdef TESTCB
+    gB2("This is invoke from b1", "is it in b1??");
+#endif
+
     return 0;
 }
 
@@ -44,7 +50,11 @@ int b2(const char* r1, const char * r2) {
 
 void test() {
     auto hook = FAInHook::instance();
+#ifdef TESTCB
+    hook->registerHook((Elf_Addr) b2, (Elf_Addr) b1, (Elf_Addr *) &gB2);
+#else
     hook->registerHook((Elf_Addr) b2, (Elf_Addr) b1, nullptr);
+#endif
     hook->hookAll();
 
     b2("This should be in b1", "is it true??");

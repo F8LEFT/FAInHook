@@ -12,21 +12,13 @@
 
 #include "elf.h"
 
-#if defined(__arm__)
-#define S32
-#elif defined(__aarch64__)
+#if defined(__aarch64__) || defined(__x86_64__) || defined(__mips64__)
 #define S64
-#elif defined(__i386__)
-#define S32
-#elif defined(__x86_64__)
-#define S64
-#elif defined(__mips64__)  /* mips64el-* toolchain defines __mips__ too */
-#define S64
-#elif defined(__mips__)
+#else
 #define S32
 #endif
 
-#ifndef S64
+#if defined(S32)
 typedef Elf32_Ehdr Elf_Ehdr;
 typedef Elf32_Phdr Elf_Phdr;
 typedef Elf32_Shdr Elf_Shdr;

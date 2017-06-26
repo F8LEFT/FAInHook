@@ -7,12 +7,10 @@ if(ANDROID_ABI MATCHES "armeabi(-v7a)?")
 elseif(ANDROID_ABI STREQUAL "arm64-v8a")
     set(INSTRUCTION instruction/Instruction.cpp
                     instruction/Arm64Instruction.cpp)
-elseif(ANDROID_ABI STREQUAL "x86")
+elseif(ANDROID_ABI MATCHES "x86(_64)?")
     set(INSTRUCTION instruction/Instruction.cpp
-                    instruction/X86Instruction.cpp)
-elseif(ANDROID_ABI STREQUAL "x86_64")
-    set(INSTRUCTION instruction/Instruction.cpp
-                    instruction/X64Instruction.cpp)
+                    instruction/IntelInstruction.cpp
+                    instruction/IntelDisasm.cpp)
 elseif(ANDROID_ABI STREQUAL "mips")
     set(INSTRUCTION instruction/Instruction.cpp
                         instruction/MipsInstruction.cpp)

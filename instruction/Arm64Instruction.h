@@ -18,6 +18,11 @@ namespace FAHook {
         ~Arm64Instruction() {}
         bool createStub(HookInfo* info);
 
+        bool createCallOriginalStub(HookInfo* info);
+
+    private:
+        bool repairCallOriginIns(HookInfo* info, uint8_t repair[], uint32_t& repairLen);
+
     };
 
 }
