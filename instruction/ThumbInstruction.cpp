@@ -10,7 +10,6 @@
 #include "ThumbInstruction.h"
 #include "../MemHelper.h"
 
-#define ALIGN_PC(pc)	(pc & 0xFFFFFFFC)
 
 bool FAHook::ThumbInstruction::createStub(FAHook::HookInfo *info) {
     auto stubSize = 0;
@@ -36,396 +35,333 @@ bool FAHook::ThumbInstruction::createStub(FAHook::HookInfo *info) {
 }
 
 bool FAHook::ThumbInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    uint8_t ins[128];
-    uint32_t insLen;
-    if(!repairCallOriginIns(info, ins, insLen)) {
-        return false;
-    }
-    auto ism = MemHelper::createExecMemory(insLen);
-    if(ism == nullptr) {
-        return false;
-    }
-    memcpy(ism, ins, insLen);
-    info->setCallOriginalIns((uint8_t*)ism + 1);
+    uint16_t *area(reinterpret_cast<uint16_t *>(getOriginalAddr(info)));
 
-    return true;
-}
 
-bool FAHook::ThumbInstruction::repairCallOriginIns(FAHook::HookInfo *info,
-                                                   uint8_t *repairIns,
-                                                   uint32_t &repairLen) {
-    auto originalAddress = (uint8_t *) info->getOriginalAddr();
+    uint16_t *trail(reinterpret_cast<uint16_t *>(
+                            reinterpret_cast<uintptr_t >(area) + info->getJumpStubLen()));
 
-    uint16_t * ins = (uint16_t *)valueToMem((uint32_t) originalAddress);
-    uint16_t * repair = (uint16_t *)repairIns;
-    int jumpLen = info->getJumpStubLen();
-    if(NULL == repair)
-        return false;
-    int pos = 0;
-    int repair_pos = 0;
-
-    /// 得到原始指令起始处的pc值
-    auto originalPc = (uint32_t)(originalAddress - 1 + 4);
-
-    /**
-     * 需要修正的是那些机器指令内部存储的是要操作数据基于当前PC的偏移值；
-     * 修正思路，计算出绝对地址，构造跳转指令。
-     * 这里还要判断是常规的16位thumb指令，还是32位的thumb2指令
-     */
-
-    while(true){
-        int offset = 0;
-
-        if(isThumb2Instruction(ins[pos])){
-            offset = repairThumb32Instruction(originalPc,ins[pos],ins[pos+1],&repair[repair_pos]);
-            originalPc += 4;
-            repair_pos += offset;
-            pos += 2;
-        }else{
-            /// thumb16
-            offset = repairThumb16Instruction(originalPc,ins[pos],&repair[repair_pos]);
-            originalPc += 2;
-            repair_pos += offset;
-            pos +=1;
-        }
-        if(pos >= jumpLen/2){
-            break;
-        }
-
-    }
-
-    /// 为了保险起见，再一次做判断
-    if((size_t)(&repair[repair_pos]) % 4 != 0){
-        repair[repair_pos ] = 0xBF00;       // pad with nop
-        repair_pos +=1;
-    }
-    auto originalLr = valueToMem((uint32_t) originalAddress) + jumpLen + 1;
-    repair[repair_pos ++] = 0xF8DF;
-    repair[repair_pos ++] = 0xF000;	// LDR.W PC, [PC]
-    repair[repair_pos ++] = originalLr & 0xFFFF;
-    repair[repair_pos ++] = originalLr >> 16;
-
-    repairLen = repair_pos * 2;
-    return true;
-}
-
-bool FAHook::ThumbInstruction::isThumb2Instruction(uint16_t ins) {
-    if(((ins >> 11)>=0x1d) && ((ins >> 11)<= 0x1f))
+    if(T$pcrel$ldrw(area[0]) &&
+        area[1] == 0xF000
+            ) {
+        uint32_t *arm(reinterpret_cast<uint32_t *>(area));
+        info->setCallOriginalIns(reinterpret_cast<uint8_t *>(arm[1]));
         return true;
-    else
+    }
+
+    size_t required((trail - area) * sizeof(uint16_t));
+
+    size_t used(0);
+    while (used < required)
+        used += MSGetInstructionWidthThumb(reinterpret_cast<uint8_t *>(area) + used);
+    used = (used + sizeof(uint16_t) - 1) / sizeof(uint16_t) * sizeof(uint16_t);
+
+    size_t blank((used - required) / sizeof(uint16_t));
+
+    uint16_t backup[used / sizeof(uint16_t)];
+    memcpy(backup, area, used);
+
+
+    size_t length(used);
+    for (unsigned offset(0); offset != used / sizeof(uint16_t); ++offset)
+        if (T$pcrel$ldr(backup[offset]))
+            length += 3 * sizeof(uint16_t);
+        else if (T$pcrel$b(backup[offset]))
+            length += 6 * sizeof(uint16_t);
+        else if (T2$pcrel$b(backup + offset)) {
+            length += 5 * sizeof(uint16_t);
+            ++offset;
+        } else if (T$pcrel$bl(backup + offset)) {
+            length += 5 * sizeof(uint16_t);
+            ++offset;
+        } else if (T$pcrel$cbz(backup[offset])) {
+            length += 16 * sizeof(uint16_t);
+        } else if (T$pcrel$ldrw(backup[offset])) {
+            length += 4 * sizeof(uint16_t);
+            ++offset;
+        } else if (T$pcrel$add(backup[offset]))
+            length += 6 * sizeof(uint16_t);
+        else if (T$32bit$i(backup[offset]))
+            ++offset;
+
+        unsigned pad((length & 0x2) == 0 ? 0 : 1);
+        length += (pad + 2) * sizeof(uint16_t) + 2 * sizeof(uint32_t);
+
+    uint16_t *buffer = (uint16_t *) MemHelper::createExecMemory(length);
+    if(buffer == nullptr) {
         return false;
-}
-
-int FAHook::ThumbInstruction::repairThumb32Instruction(uint32_t pc,
-                                                       uint16_t high_instruction,
-                                                       uint16_t low_instruction,
-                                                       uint16_t *respair) {
-    uint32_t instruction;
-    int type;
-    int idx;
-    int offset;
-
-    instruction = (high_instruction << 16) | low_instruction;
-    type = getRepairInstruction(instruction);
-    idx = 0;
-    if (type == BLX_THUMB32 || type == BL_THUMB32 || type == B1_THUMB32 || type == B2_THUMB32) {
-        uint32_t j1;
-        uint32_t j2;
-        uint32_t s;
-        uint32_t i1;
-        uint32_t i2;
-        uint32_t x;
-        uint32_t imm32;
-        uint32_t value;
-
-        j1 = (low_instruction & 0x2000) >> 13;
-        j2 = (low_instruction & 0x800) >> 11;
-        s = (high_instruction & 0x400) >> 10;
-        i1 = !(j1 ^ s);
-        i2 = !(j2 ^ s);
-
-        if (type == BLX_THUMB32 || type == BL_THUMB32) {
-            respair[idx++] = 0xF20F;
-            respair[idx++] = 0x0E09;	// ADD.W LR, PC, #9
-        }
-        else if (type == B1_THUMB32) {
-            respair[idx++] = 0xD000 | ((high_instruction & 0x3C0) << 2);
-            respair[idx++] = 0xE003;	// B PC, #6
-        }
-        respair[idx++] = 0xF8DF;
-        respair[idx++] = 0xF000;	// LDR.W PC, [PC]
-        if (type == BLX_THUMB32) {
-            x = (s << 24) | (i1 << 23) | (i2 << 22) | ((high_instruction & 0x3FF) << 12) | ((low_instruction & 0x7FE) << 1);
-            imm32 = s ? (x | (0xFFFFFFFF << 25)) : x;
-            value = pc + imm32;
-        }
-        else if (type == BL_THUMB32) {
-            x = (s << 24) | (i1 << 23) | (i2 << 22) | ((high_instruction & 0x3FF) << 12) | ((low_instruction & 0x7FF) << 1);
-            imm32 = s ? (x | (0xFFFFFFFF << 25)) : x;
-            value = pc + imm32;
-            value = valueToPc(value);
-        }
-        else if (type == B1_THUMB32) {
-            x = (s << 20) | (j2 << 19) | (j1 << 18) | ((high_instruction & 0x3F) << 12) | ((low_instruction & 0x7FF) << 1);
-            imm32 = s ? (x | (0xFFFFFFFF << 21)) : x;
-            value = pc + imm32;
-            value = valueToPc(value);
-        }
-        else if (type == B2_THUMB32) {
-            x = (s << 24) | (i1 << 23) | (i2 << 22) | ((high_instruction & 0x3FF) << 12) | ((low_instruction & 0x7FF) << 1);
-            imm32 = s ? (x | (0xFFFFFFFF << 25)) : x;
-            value = pc + imm32;
-            value = valueToPc(value);
-        }
-        respair[idx++] = value & 0xFFFF;
-        respair[idx++] = value >> 16;
-        offset = idx;
     }
-    else if (type == ADR1_THUMB32 || type == ADR2_THUMB32 || type == LDR_THUMB32) {
-        int r;
-        uint32_t imm32;
-        uint32_t value;
 
-        if (type == ADR1_THUMB32 || type == ADR2_THUMB32) {
-            uint32_t i;
-            uint32_t imm3;
-            uint32_t imm8;
+    size_t start(pad), end(length / sizeof(uint16_t));
+    uint32_t *trailer(reinterpret_cast<uint32_t *>(buffer + end));
+    for (unsigned offset(0); offset != used / sizeof(uint16_t); ++offset) {
+        if (T$pcrel$ldr(backup[offset])) {
+            union {
+                uint16_t value;
 
-            r = (low_instruction & 0xF00) >> 8;
-            i = (high_instruction & 0x400) >> 10;
-            imm3 = (low_instruction & 0x7000) >> 12;
-            imm8 = instruction & 0xFF;
+                struct {
+                    uint16_t immediate : 8;
+                    uint16_t rd : 3;
+                    uint16_t : 5;
+                };
+            } bits = {backup[offset+0]};
 
-            imm32 = (i << 31) | (imm3 << 30) | (imm8 << 27);
+            buffer[start+0] = T$ldr_rd_$pc_im_4$(bits.rd, T$Label(start+0, end-2) / 4);
+            buffer[start+1] = T$ldr_rd_$rn_im_4$(bits.rd, bits.rd, 0);
 
-            if (type == ADR1_THUMB32) {
-                value = ALIGN_PC(pc) + imm32;
-            }
-            else {
-                value = ALIGN_PC(pc) - imm32;
-            }
-        }
-        else {
-            int is_add;
-            uint32_t *addr;
+            // XXX: this code "works", but is "wrong": the mechanism is more complex than this
+            *--trailer = ((reinterpret_cast<uint32_t>(area + offset) + 4) & ~0x2) + bits.immediate * 4;
 
-            is_add = (high_instruction & 0x80) >> 7;
-            r = low_instruction >> 12;
-            imm32 = low_instruction & 0xFFF;
+            start += 2;
+            end -= 2;
+        } else if (T$pcrel$b(backup[offset])) {
+            union {
+                uint16_t value;
 
-            if (is_add) {
-                addr = (uint32_t *) (ALIGN_PC(pc) + imm32);
-            }
-            else {
-                addr = (uint32_t *) (ALIGN_PC(pc) - imm32);
+                struct {
+                    uint16_t imm8 : 8;
+                    uint16_t cond : 4;
+                    uint16_t /*1101*/ : 4;
+                };
+            } bits = {backup[offset+0]};
+
+            intptr_t jump(bits.imm8 << 1);
+            jump |= 1;
+            jump <<= 23;
+            jump >>= 23;
+
+            buffer[start+0] = T$b$_$im(bits.cond, (end-6 - (start+0)) * 2 - 4);
+
+            *--trailer = reinterpret_cast<uint32_t>(area + offset) + 4 + jump;
+            *--trailer = A$ldr_rd_$rn_im$(A$pc, A$pc, 4 - 8);
+            *--trailer = T$nop << 16 | T$bx(A$pc);
+
+            start += 1;
+            end -= 6;
+        } else if (T2$pcrel$b(backup + offset)) {
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t imm6 : 6;
+                    uint16_t cond : 4;
+                    uint16_t s : 1;
+                    uint16_t : 5;
+                };
+            } bits = {backup[offset+0]};
+
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t imm11 : 11;
+                    uint16_t j2 : 1;
+                    uint16_t a : 1;
+                    uint16_t j1 : 1;
+                    uint16_t : 2;
+                };
+            } exts = {backup[offset+1]};
+
+            intptr_t jump(1);
+            jump |= exts.imm11 << 1;
+            jump |= bits.imm6 << 12;
+
+            if (exts.a) {
+                jump |= bits.s << 24;
+                jump |= (~(bits.s ^ exts.j1) & 0x1) << 23;
+                jump |= (~(bits.s ^ exts.j2) & 0x1) << 22;
+                jump |= bits.cond << 18;
+                jump <<= 7;
+                jump >>= 7;
+            } else {
+                jump |= bits.s << 20;
+                jump |= exts.j2 << 19;
+                jump |= exts.j1 << 18;
+                jump <<= 11;
+                jump >>= 11;
             }
 
-            value = addr[0];
-        }
+            buffer[start+0] = T$b$_$im(exts.a ? A$al : bits.cond, (end-6 - (start+0)) * 2 - 4);
 
-        respair[0] = 0x4800 | (r << 8);	// LDR Rr, [PC]
-        respair[1] = 0xE001;	// B PC, #2
-        respair[2] = value & 0xFFFF;
-        respair[3] = value >> 16;
-        offset = 4;
-    }
+            *--trailer = reinterpret_cast<uint32_t>(area + offset) + 4 + jump;
+            *--trailer = A$ldr_rd_$rn_im$(A$pc, A$pc, 4 - 8);
+            *--trailer = T$nop << 16 | T$bx(A$pc);
 
-    else if (type == TBB_THUMB32 || type == TBH_THUMB32) {
-        int rm;
-        int r;
-        int rx;
+            ++offset;
+            start += 1;
+            end -= 6;
+        } else if (T$pcrel$bl(backup + offset)) {
+            union {
+                uint16_t value;
 
-        rm = low_instruction & 0xF;
+                struct {
+                    uint16_t immediate : 10;
+                    uint16_t s : 1;
+                    uint16_t : 5;
+                };
+            } bits = {backup[offset+0]};
 
-        for (r = 7;; --r) {
-            if (r != rm) {
-                break;
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t immediate : 11;
+                    uint16_t j2 : 1;
+                    uint16_t x : 1;
+                    uint16_t j1 : 1;
+                    uint16_t : 2;
+                };
+            } exts = {backup[offset+1]};
+
+            int32_t jump(0);
+            jump |= bits.s << 24;
+            jump |= (~(bits.s ^ exts.j1) & 0x1) << 23;
+            jump |= (~(bits.s ^ exts.j2) & 0x1) << 22;
+            jump |= bits.immediate << 12;
+            jump |= exts.immediate << 1;
+            jump |= exts.x;
+            jump <<= 7;
+            jump >>= 7;
+
+            buffer[start+0] = T$push_r(1 << A$r7);
+            buffer[start+1] = T$ldr_rd_$pc_im_4$(A$r7, ((end-2 - (start+1)) * 2 - 4 + 2) / 4);
+            buffer[start+2] = T$mov_rd_rm(A$lr, A$r7);
+            buffer[start+3] = T$pop_r(1 << A$r7);
+            buffer[start+4] = T$blx(A$lr);
+
+            *--trailer = reinterpret_cast<uint32_t>(area + offset) + 4 + jump;
+
+            ++offset;
+            start += 5;
+            end -= 2;
+        } else if (T$pcrel$cbz(backup[offset])) {
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t rn : 3;
+                    uint16_t immediate : 5;
+                    uint16_t : 1;
+                    uint16_t i : 1;
+                    uint16_t : 1;
+                    uint16_t op : 1;
+                    uint16_t : 4;
+                };
+            } bits = {backup[offset+0]};
+
+            intptr_t jump(1);
+            jump |= bits.i << 6;
+            jump |= bits.immediate << 1;
+
+            //jump <<= 24;
+            //jump >>= 24;
+
+            unsigned rn(bits.rn);
+            unsigned rt(rn == A$r7 ? A$r6 : A$r7);
+
+            buffer[start+0] = T$push_r(1 << rt);
+            buffer[start+1] = T1$mrs_rd_apsr(rt);
+            buffer[start+2] = T2$mrs_rd_apsr(rt);
+            buffer[start+3] = T$cbz$_rn_$im(bits.op, rn, (end-10 - (start+3)) * 2 - 4);
+            buffer[start+4] = T1$msr_apsr_nzcvqg_rn(rt);
+            buffer[start+5] = T2$msr_apsr_nzcvqg_rn(rt);
+            buffer[start+6] = T$pop_r(1 << rt);
+
+            *--trailer = reinterpret_cast<uint32_t>(area + offset) + 4 + jump;
+            *--trailer = A$ldr_rd_$rn_im$(A$pc, A$pc, 4 - 8);
+            *--trailer = T$nop << 16 | T$bx(A$pc);
+            *--trailer = T$nop << 16 | T$pop_r(1 << rt);
+            *--trailer = T$msr_apsr_nzcvqg_rn(rt);
+
+#if 0
+            if ((start & 0x1) == 0)
+                buffer[start++] = T$nop;
+            buffer[start++] = T$bx(A$pc);
+            buffer[start++] = T$nop;
+
+            uint32_t *arm(reinterpret_cast<uint32_t *>(buffer + start));
+            arm[0] = A$add(A$lr, A$pc, 1);
+            arm[1] = A$ldr_rd_$rn_im$(A$pc, A$pc, (trailer - arm) * sizeof(uint32_t) - 8);
+#endif
+
+            start += 7;
+            end -= 10;
+        } else if (T$pcrel$ldrw(backup[offset])) {
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t : 7;
+                    uint16_t u : 1;
+                    uint16_t : 8;
+                };
+            } bits = {backup[offset+0]};
+
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t immediate : 12;
+                    uint16_t rt : 4;
+                };
+            } exts = {backup[offset+1]};
+
+            buffer[start+0] = T1$ldr_rt_$rn_im$(exts.rt, A$pc, T$Label(start+0, end-2));
+            buffer[start+1] = T2$ldr_rt_$rn_im$(exts.rt, A$pc, T$Label(start+0, end-2));
+
+            buffer[start+2] = T1$ldr_rt_$rn_im$(exts.rt, exts.rt, 0);
+            buffer[start+3] = T2$ldr_rt_$rn_im$(exts.rt, exts.rt, 0);
+
+            // XXX: this code "works", but is "wrong": the mechanism is more complex than this
+            *--trailer = ((reinterpret_cast<uint32_t>(area + offset) + 4) & ~0x2) + (bits.u == 0 ? -exts.immediate : exts.immediate);
+
+            ++offset;
+            start += 4;
+            end -= 2;
+        } else if (T$pcrel$add(backup[offset])) {
+            union {
+                uint16_t value;
+
+                struct {
+                    uint16_t rd : 3;
+                    uint16_t rm : 3;
+                    uint16_t h2 : 1;
+                    uint16_t h1 : 1;
+                    uint16_t : 8;
+                };
+            } bits = {backup[offset+0]};
+
+            if (bits.h1) {
+                return false;
             }
-        }
 
-        for (rx = 7; ; --rx) {
-            if (rx != rm && rx != r) {
-                break;
-            }
-        }
+            unsigned rt(bits.rd == A$r7 ? A$r6 : A$r7);
 
-        respair[0] = 0xB400 | (1 << rx);	// PUSH {Rx}
-        respair[1] = 0x4805 | (r << 8);	// LDR Rr, [PC, #20]
-        respair[2] = 0x4600 | (rm << 3) | rx;	// MOV Rx, Rm
-        if (type == TBB_THUMB32) {
-            respair[3] = 0xEB00 | r;
-            respair[4] = 0x0000 | (rx << 8) | rx;	// ADD.W Rx, Rr, Rx
-            respair[5] = 0x7800 | (rx << 3) | rx; 	// LDRB Rx, [Rx]
+            buffer[start+0] = T$push_r(1 << rt);
+            buffer[start+1] = T$mov_rd_rm(rt, (bits.h1 << 3) | bits.rd);
+            buffer[start+2] = T$ldr_rd_$pc_im_4$(bits.rd, T$Label(start+2, end-2) / 4);
+            buffer[start+3] = T$add_rd_rm((bits.h1 << 3) | bits.rd, rt);
+            buffer[start+4] = T$pop_r(1 << rt);
+            *--trailer = reinterpret_cast<uint32_t>(area + offset) + 4;
+
+            start += 5;
+            end -= 2;
+        } else if (T$32bit$i(backup[offset])) {
+            buffer[start++] = backup[offset];
+            buffer[start++] = backup[++offset];
+        } else {
+            buffer[start++] = backup[offset];
         }
-        else if (type == TBH_THUMB32) {
-            respair[3] = 0xEB00 | r;
-            respair[4] = 0x0040 | (rx << 8) | rx;	// ADD.W Rx, Rr, Rx, LSL #1
-            respair[5] = 0x8800 | (rx << 3) | rx; 	// LDRH Rx, [Rx]
-        }
-        respair[6] = 0xEB00 | r;
-        respair[7] = 0x0040 | (r << 8) | rx;	// ADD Rr, Rr, Rx, LSL #1
-        respair[8] = 0x3001 | (r << 8);	// ADD Rr, #1
-        respair[9] = 0xBC00 | (1 << rx);	// POP {Rx}
-        respair[10] = 0x4700 | (r << 3);	// BX Rr
-        respair[11] = 0xBF00;
-        respair[12] = pc & 0xFFFF;
-        respair[13] = pc >> 16;
-        offset = 14;
-    }
-    else {
-        respair[0] = high_instruction;
-        respair[1] = low_instruction;
-        offset = 2;
     }
 
-    return offset;
-}
+    buffer[start++] = T$bx(A$pc);
+    buffer[start++] = T$nop;
 
-int FAHook::ThumbInstruction::repairThumb16Instruction(uint32_t pc,
-                                                       uint16_t instruction,
-                                                       uint16_t *respair) {
-    int type;
-    int offset;
-    type = getRepairInstruction(instruction);
-    if (type == B1_THUMB16 || type == B2_THUMB16 || type == BX_THUMB16) {
-        uint32_t x;
-        int top_bit;
-        uint32_t imm32;
-        uint32_t value;
-        int idx;
+    uint32_t *transfer = reinterpret_cast<uint32_t *>(buffer + start);
+    transfer[0] = A$ldr_rd_$rn_im$(A$pc, A$pc, 4 - 8);
+    transfer[1] = reinterpret_cast<uint32_t>(area + used / sizeof(uint16_t)) + 1;
 
-        idx = 0;
-        if (type == B1_THUMB16) {
-            x = (instruction & 0xFF) << 1;
-            top_bit = x >> 8;
-            imm32 = top_bit ? (x | (0xFFFFFFFF << 8)) : x;
-            value = pc + imm32;
-            respair[idx++] = instruction & 0xFF00;  // B<cond> 0
-            respair[idx++] = 0xE003;                // B PC, #6
-        }
-        else if (type == B2_THUMB16) {
-            x = (instruction & 0x7FF) << 1;
-            top_bit = x >> 11;
-            imm32 = top_bit ? (x | (0xFFFFFFFF << 11)) : x;
-            value = pc + imm32;
+    info->setCallOriginalIns(reinterpret_cast<uint8_t *>(buffer + pad) + 1);
 
-        }
-        else if (type == BX_THUMB16) {
-            value = pc;
-        }
-
-        respair[idx++] = 0xF8DF;
-        respair[idx++] = 0xF000;	// LDR.W PC, [PC]
-        respair[idx++] = valueToPc(value) & 0xFFFF;
-        respair[idx++] = valueToPc(value) >> 16;
-        offset = idx;
-    }
-    else if (type == ADD_THUMB16) {
-        int rdn;
-        int rm;
-        int r;
-
-        rdn = ((instruction & 0x80) >> 4) | (instruction & 0x7);
-
-        for (r = 7; ; --r) {
-            if (r != rdn) {
-                break;
-            }
-        }
-
-        respair[0] = 0xB400 | (1 << r);	// PUSH {Rr}
-        respair[1] = 0x4802 | (r << 8);	// LDR Rr, [PC, #8]
-        respair[2] = (instruction & 0xFF87) | (r << 3);
-        respair[3] = 0xBC00 | (1 << r);	// POP {Rr}
-        respair[4] = 0xE002;	// B PC, #4
-        respair[5] = 0xBF00;
-        respair[6] = pc & 0xFFFF;
-        respair[7] = pc >> 16;
-        offset = 8;
-    }
-    else if (type == MOV_THUMB16 || type == ADR_THUMB16 || type == LDR_THUMB16) {
-        int r;
-        uint32_t value;
-
-        if (type == MOV_THUMB16) {
-            r = instruction & 0x7;
-            value = pc;
-        }
-        else if (type == ADR_THUMB16) {
-            r = (instruction & 0x700) >> 8;
-            value = ALIGN_PC(pc) + (instruction & 0xFF) << 2;
-        }
-        else {
-            r = (instruction & 0x700) >> 8;
-            value = ((uint32_t *) (ALIGN_PC(pc) + ((instruction & 0xFF) << 2)))[0];
-        }
-
-        respair[0] = 0x4800 | (r << 8);	// LDR Rd, [PC]
-        respair[1] = 0xE001;	// B PC, #2
-        respair[2] = value & 0xFFFF;
-        respair[3] = value >> 16;
-        offset = 4;
-    }
-    else {
-        respair[0] = instruction;
-        respair[1] = 0xBF00;  // NOP 方便接下来构造thumb2指令
-        offset = 2;
-    }
-
-    return offset;
-}
-
-int FAHook::ThumbInstruction::getRepairInstruction(size_t instruction) {
-    if((instruction >> 16) == 0){
-        if ((instruction & 0xF000) == 0xD000) {
-            return B1_THUMB16;
-        }
-        if ((instruction & 0xF800) == 0xE000) {
-            return B2_THUMB16;
-        }
-        if ((instruction & 0xFFF8) == 0x4778) {
-            return BX_THUMB16;
-        }
-        if ((instruction & 0xFF78) == 0x4478) {
-            return ADD_THUMB16;
-        }
-        if ((instruction & 0xFF78) == 0x4678) {
-            return MOV_THUMB16;
-        }
-        if ((instruction & 0xF800) == 0xA000) {
-            return ADR_THUMB16;
-        }
-        if ((instruction & 0xF800) == 0x4800) {
-            return LDR_THUMB16;
-        }
-    }else{
-        if ((instruction & 0xF800D000) == 0xF000C000) {
-            return BLX_THUMB32;
-        }
-        if ((instruction & 0xF800D000) == 0xF000D000) {
-            return BL_THUMB32;
-        }
-        if ((instruction & 0xF800D000) == 0xF0008000) {
-            return B1_THUMB32;
-        }
-        if ((instruction & 0xF800D000) == 0xF0009000) {
-            return B2_THUMB32;
-        }
-        if ((instruction & 0xFBFF8000) == 0xF2AF0000) {
-            return ADR1_THUMB32;
-        }
-        if ((instruction & 0xFBFF8000) == 0xF20F0000) {
-            return ADR2_THUMB32;
-        }
-        if ((instruction & 0xFF7F0000) == 0xF85F0000) {
-            return LDR_THUMB32;
-        }
-        if ((instruction & 0xFFFF00F0) == 0xE8DF0000) {
-            return TBB_THUMB32;
-        }
-        if ((instruction & 0xFFFF00F0) == 0xE8DF0010) {
-            return TBH_THUMB32;
-        }
-    }
-    return UNDEFINE;
+    return true;
 }

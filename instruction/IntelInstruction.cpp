@@ -23,38 +23,43 @@ bool FAHook::IntelInstruction::createStub(FAHook::HookInfo *info) {
 
     info->setJumpStubLen(required);
     info->setJumpStubBack(stub);
+
     return true;
 }
 
 bool FAHook::IntelInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
-    uintptr_t source(reinterpret_cast<uintptr_t >(info->getOriginalAddr()));
-    uintptr_t target(reinterpret_cast<uintptr_t >(info->getHookAddr()));
 
-    uint8_t * area(reinterpret_cast<uint8_t *>(source));
+    uintptr_t source(reinterpret_cast<uintptr_t>(info->getOriginalAddr()));
+    uintptr_t target(reinterpret_cast<uintptr_t>(info->getHookAddr()));
 
-    auto required = info->getJumpStubLen();
-    auto used(0);
-    while(used < required) {
-        auto width = hde64_getInsWidth(area + used);
-        if(width == 0) {
+    uint8_t *area(reinterpret_cast<uint8_t *>(source));
+
+    size_t required(MSSizeOfJump(target, source));
+
+
+    size_t used(0);
+    while (used < required) {
+        size_t width(hde64_getInsWidth(area + used));
+        if (width == 0) {
             return false;
         }
+
         used += width;
     }
 
-    auto blank(used - required);
+    size_t blank(used - required);
+
     uint8_t backup[used];
     memcpy(backup, area, used);
 
-    if(backup[0] == 0xe9) {   // call, just ret distination addr
-        auto dest = reinterpret_cast<void*>(source + 5 + *reinterpret_cast<uint32_t *>(backup + 1));
-        info->setCallOriginalIns((uint8_t *) dest);
+
+    if (backup[0] == 0xe9) {        // call xxxxxxx
+        info->setCallOriginalIns(reinterpret_cast<uint8_t *>(source + 5 + *reinterpret_cast<uint32_t *>(backup + 1)));
         return true;
     }
 
-    if(!ia32 && backup[0] == 0xff && backup[1] == 0x25) {   // jmp, just get distination addr
-        auto dest = reinterpret_cast<void*> (source + 6 + *reinterpret_cast<uint32_t *>(backup + 2));
-        info->setCallOriginalIns((uint8_t*)dest);
+    if (!ia32 && backup[0] == 0xff && backup[1] == 0x25) {  // jmp xxxxxxxx
+        info->setCallOriginalIns(*reinterpret_cast<uint8_t **>(source + 6 + *reinterpret_cast<uint32_t *>(backup + 2)));
         return true;
     }
 
@@ -108,9 +113,8 @@ bool FAHook::IntelInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
         }
     }
 
-    uint8_t * buffer = (uint8_t *) MemHelper::createExecMemory(length);
-
-    if (buffer == nullptr) {
+    uint8_t *buffer = (uint8_t *) MemHelper::createExecMemory(length);
+    if(buffer == nullptr) {
         return false;
     }
 
@@ -124,16 +128,16 @@ bool FAHook::IntelInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
 
 #ifdef __LP64__
         if ((decode.modrm & 0xc7) == 0x05) {
-            if (decode.opcode == 0x8b) {
-                void *destiny(area + offset + width + int32_t(decode.disp.disp32));
-                uint8_t reg(decode.rex_r << 3 | decode.modrm_reg);
-                MSPushPointer(current, destiny);
-                MSWritePop(current, reg);
-                MSWriteMove64(current, reg, reg);
-            } else {
-                goto copy;
-            }
-        } else
+                if (decode.opcode == 0x8b) {
+                    void *destiny(area + offset + width + int32_t(decode.disp.disp32));
+                    uint8_t reg(decode.rex_r << 3 | decode.modrm_reg);
+                    MSPushPointer(current, destiny);
+                    MSWritePop(current, reg);
+                    MSWriteMove64(current, reg, reg);
+                } else {
+                    goto copy;
+                }
+            } else
 #endif
 
         if (backup[offset] == 0xe8) {
@@ -145,12 +149,12 @@ bool FAHook::IntelInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
                 MSWrite<int32_t>(current, MSSizeOfSkip());
                 void *destiny(area + offset + decode.len + relative);
                 MSWriteSkip(current, MSSizeOfJump(destiny, current + MSSizeOfSkip()));
-                MSWriteJump(current, (uintptr_t) current, destiny);
+                MSWriteJump(current, destiny);
             }
         } else if (backup[offset] == 0xeb)
-            MSWriteJump(current, (uintptr_t) current, area + offset + decode.len + *reinterpret_cast<int8_t *>(backup + offset + 1));
+            MSWriteJump(current, area + offset + decode.len + *reinterpret_cast<int8_t *>(backup + offset + 1));
         else if (backup[offset] == 0xe9)
-            MSWriteJump(current, (uintptr_t) current, area + offset + decode.len + *reinterpret_cast<int32_t *>(backup + offset + 1));
+            MSWriteJump(current, area + offset + decode.len + *reinterpret_cast<int32_t *>(backup + offset + 1));
         else if (
                 backup[offset] == 0xe3 ||
                 (backup[offset] & 0xf0) == 0x70
@@ -160,18 +164,17 @@ bool FAHook::IntelInstruction::createCallOriginalStub(FAHook::HookInfo *info) {
             MSWrite<uint8_t>(current, 0xeb);
             void *destiny(area + offset + decode.len + *reinterpret_cast<int8_t *>(backup + offset + 1));
             MSWrite<uint8_t>(current, MSSizeOfJump(destiny, current + 1));
-            MSWriteJump(current, (uintptr_t) current, destiny);
+            MSWriteJump(current, destiny);
         } else
 #ifdef __LP64__
             copy:
 #endif
-            {
-                MSWrite(current, backup + offset, width);
-            }
+        {
+            MSWrite(current, backup + offset, width);
+        }
     }
 
-    MSWriteJump(current, (uintptr_t) current, area + used);
-
+    MSWriteJump(current, area + used);
     info->setCallOriginalIns(buffer);
 
     return true;

@@ -3,7 +3,7 @@
 //                     Created by F8LEFT on 2017/6/26.
 //                   Copyright (c) 2017. All rights reserved.
 //===----------------------------------------------------------------------===//
-// IntellInstruction is base on CydiaSubstrate hook.
+// IntellInstruction is base on MShook.
 //===----------------------------------------------------------------------===//
 
 
@@ -29,7 +29,6 @@ namespace FAHook {
         bool createCallOriginalStub(HookInfo* info);
 
     private:
-
 
         template <typename Type_>
         _disused static _finline void MSWrite(uint8_t *&buffer, Type_ value) {
@@ -124,7 +123,8 @@ namespace FAHook {
             MSWrite<uint8_t>(current, 0xd0 | (target & 0x07));
         }
 
-        _disused static void MSWriteCall(uint8_t *&current, uintptr_t source, uintptr_t target) {
+        _disused static void MSWriteCall(uint8_t *&current, uintptr_t target) {
+            uintptr_t source(reinterpret_cast<uintptr_t>(current));
 
             if (ia32 || MSIs32BitOffset(target, source + 5)) {
                 MSWrite<uint8_t>(current, 0xe8);
@@ -145,8 +145,8 @@ namespace FAHook {
         }
 
         template <typename Type_>
-        _disused static void MSWriteCall(uint8_t *&current, uintptr_t source, Type_ *target) {
-            return MSWriteCall(current, source, reinterpret_cast<uintptr_t>(target));
+        _disused static void MSWriteCall(uint8_t *&current, Type_ *target) {
+            return MSWriteCall(current, reinterpret_cast<uintptr_t>(target));
         }
 
         _disused static void MSWriteJump(uint8_t *&current, uintptr_t source, uintptr_t target) {
@@ -159,8 +159,19 @@ namespace FAHook {
             }
         }
 
-        _disused static void MSWriteJump(uint8_t *&current, uintptr_t source, void *target) {
-            return MSWriteJump(current, source, reinterpret_cast<uintptr_t>(target));
+        _disused static void MSWriteJump(uint8_t *&current, uintptr_t target) {
+            uintptr_t source(reinterpret_cast<uintptr_t>(current));
+
+            if (ia32 || MSIs32BitOffset(target, source + 5))
+                MSWriteSkip(current, target - (source + 5));
+            else {
+                MSPushPointer(current, target);
+                MSWrite<uint8_t>(current, 0xc3);
+            }
+        }
+
+        _disused static void MSWriteJump(uint8_t *&current, void *target) {
+            return MSWriteJump(current, reinterpret_cast<uintptr_t>(target));
         }
 
         _disused static void MSWriteJump(uint8_t *&current, I$r target) {
